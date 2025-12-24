@@ -5,6 +5,17 @@ from .decoder import DepthRegression
 from .encoder import ImageEncoder, HistogramEncoder
 from .decoder import Decoder
 
+class UncertaintyEstimation(nn.Module):
+    def __init__(self, in_channels, n_bins):
+        super(UncertaintyEstimation, self).__init__()
+        self.conv_depth = nn.Conv2d(in_channels, n_bins, kernel_size=1)
+        self.conv_uncertainty = nn.Conv2d(in_channels, 1, kernel_size=1)
+
+    def forward(self, x):
+        depth = self.conv_depth(x)
+        uncertainty = self.conv_uncertainty(x)
+        return depth, uncertainty
+
 class Deltar(nn.Module):
     def __init__(self, n_bins=100, min_val=0.1, max_val=10, norm='linear'):
         super(Deltar, self).__init__()
@@ -17,7 +28,7 @@ class Deltar(nn.Module):
         self.decoder = Decoder(num_classes=128)
         self.conv_out = nn.Sequential(nn.Conv2d(128, n_bins, kernel_size=1, stride=1, padding=0),
                                       nn.Softmax(dim=1))
-
+        self.uncertainty_estimation = UncertaintyEstimation(128, n_bins)
         self._reset_parameters()
 
     def _reset_parameters(self):
@@ -48,7 +59,7 @@ class Deltar(nn.Module):
 
         bin_widths_normed, range_attention_maps = self.depth_head(unet_out)
         out = self.conv_out(range_attention_maps)
-
+        # out, uncertainty = slef.uncertainty_estimation(range_attention_maps)
         bin_widths = (self.max_val - self.min_val) * bin_widths_normed  # .shape = N, dim_out
         bin_widths = nn.functional.pad(bin_widths, (1, 0), mode='constant', value=self.min_val)
         bin_edges = torch.cumsum(bin_widths, dim=1)
@@ -59,7 +70,7 @@ class Deltar(nn.Module):
 
         pred = torch.sum(out * centers, dim=1, keepdim=True)
 
-        return bin_edges, pred
+        return bin_edges, pred#, uncertainty
 
     def get_1x_lr_params(self):  # lr/10 learning rate
         return self.img_encoder.parameters()

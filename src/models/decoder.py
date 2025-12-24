@@ -3,7 +3,21 @@ import torch.nn as nn
 from .fusion import TransformerFusion
 import torch.nn.functional as F
 
+class MultiScaleFusion(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super(MultiScaleFusion, self).__init__()
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=1)
+        self.conv2 = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
+        self.conv3 = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=2, dilation=2)
+        self.conv_out = nn.Conv2d(out_channels * 3, out_channels, kernel_size=1)
 
+    def forward(self, x):
+        x1 = self.conv1(x)
+        x2 = self.conv2(x)
+        x3 = self.conv3(x)
+        out = torch.cat([x1, x2, x3], dim=1)
+        return self.conv_out(out)
+    
 class DepthRegression(nn.Module):
     def __init__(self, in_channels, dim_out=256, embedding_dim=128, norm='linear'):
         super(DepthRegression, self).__init__()
@@ -34,6 +48,26 @@ class DepthRegression(nn.Module):
         y = y / y.sum(dim=1, keepdim=True)
         return y, range_attention_maps
 
+class SelfAttention(nn.Module):
+    def __init__(self, in_channels):
+        super(SelfAttention, self).__init__()
+        self.query = nn.Conv2d(in_channels, in_channels // 8, kernel_size=1)
+        self.key = nn.Conv2d(in_channels, in_channels // 8, kernel_size=1)
+        self.value = nn.Conv2d(in_channels, in_channels, kernel_size=1)
+        self.gamma = nn.Parameter(torch.zeros(1))
+
+    def forward(self, x):
+        batch_size, C, width, height = x.size()
+        proj_query = self.query(x).view(batch_size, -1, width * height).permute(0, 2, 1)
+        proj_key = self.key(x).view(batch_size, -1, width * height)
+        energy = torch.bmm(proj_query, proj_key)
+        attention = torch.softmax(energy, dim=-1)
+        proj_value = self.value(x).view(batch_size, -1, width * height)
+
+        out = torch.bmm(proj_value, attention.permute(0, 2, 1))
+        out = out.view(batch_size, C, width, height)
+        out = self.gamma * out + x
+        return out
 
 class UpSampleBN(nn.Module):
     def __init__(self, skip_input, output_features):
@@ -76,7 +110,10 @@ class Decoder(nn.Module):
         self.conv1 = nn.Conv2d(decoder_channels[3], decoder_channels[4], kernel_size=1, stride=1, padding=0)
 
         self.conv0 = nn.Conv2d(decoder_channels[4], num_classes, kernel_size=3, stride=1, padding=1)
-
+        
+        self.multi_scale_fusion = MultiScaleFusion(decoder_channels[-1], decoder_channels[-1])
+        self.self_attention = SelfAttention(decoder_channels[-1])
+        
         resolution = [
             [240, 320],
             [120, 160],
@@ -120,6 +157,8 @@ class Decoder(nn.Module):
         x_d1 = torch.cat([x_d1, x_d1_fused], dim=1)
 
         x_d0 = self.up4(x_d1, x_block0)
+        # x_d0 = self.multi_scale_fusion(x_d0)
+        # x_d0 = self.self_attention(x_d0)
 
         out = self.conv0(x_d0)
 

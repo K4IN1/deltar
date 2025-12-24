@@ -11,7 +11,7 @@ import torch.utils.data.distributed
 from PIL import Image
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
-
+from src.utils.augmentation import panoramic_augmentation
 from ..utils.dataloader import seed_worker, sample_point_from_hist_parallel, get_hist_parallel, patch_info_from_rect_data
 
 def _is_pil_image(img):
@@ -51,7 +51,7 @@ class DataLoadPreprocess(Dataset):
     def __init__(self, args, mode, transform=None, is_for_online_eval=False):
         self.args = deepcopy(args)
         self.args.mode = mode
-
+        self.use_augmentation = mode == 'train'
         fname, md = None, None
         fname = args.filenames_file
         if mode == 'online_eval':
@@ -88,7 +88,10 @@ class DataLoadPreprocess(Dataset):
 
         image = Image.fromarray(rgb_h5, mode='RGB')
         depth_gt = Image.fromarray(dep_h5.astype('float32'), mode='F')
-
+        
+        # if self.use_augmentation:
+        #     image = panoramic_augmentation(image)
+        
         if self.mode == 'train':
             # To avoid blank boundaries due to pixel registration
             depth_gt = depth_gt.crop((16, 12, 640-16, 480-12))

@@ -17,3 +17,7 @@ class SILogLoss(nn.Module):
 
         Dg = torch.var(g) + 0.15 * torch.pow(torch.mean(g), 2)
         return 10 * torch.sqrt(Dg)
+
+def uncertainty_aware_loss(pred, target, uncertainty):
+    loss = 0.5 * torch.exp(-uncertainty) * (pred - target)**2 + 0.5 * uncertainty
+    return loss.mean()

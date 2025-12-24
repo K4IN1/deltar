@@ -16,8 +16,9 @@ from src.utils.metrics import compute_errors
 from src.models.deltar import Deltar
 from src.dataloader.nyu import NYUV2
 from src.loss import SILogLoss
-
+from src.loss import uncertainty_aware_loss
 import os
+
 os.environ["OMP_NUM_THREADS"] = "1"  # noqa
 os.environ["MKL_NUM_THREADS"] = "1"  # noqa
 
@@ -112,9 +113,10 @@ def train(model, args, epochs=10, experiment_name="DeepLab", lr=0.0001,
                     continue
 
             bin_edges, pred = model(input_data)
-
+            # bin_edges, pred, uncertainty = model(input_data)
             mask = depth > args.min_depth
             loss = criterion_ueff(pred, depth, mask=mask.to(torch.bool), interpolate=True)
+            # loss = uncertainty_aware_loss(pred, depth, uncertainty)
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), 0.1)  # optional
             optimizer.step()
@@ -168,9 +170,10 @@ def validate(args, model, test_loader, criterion_loss, epoch, epochs, device='cp
                 if not batch['has_valid_depth']:
                     continue
             bin_edges, pred = model(input_data)
-
+            # bin_edges, pred, uncertainty = model(input_data)
             mask = depth > args.min_depth
             loss = criterion_ueff(pred, depth, mask=mask.to(torch.bool), interpolate=True)
+            #loss = uncertainty_aware_loss(pred, depth, uncertainty)
             val_si.append(loss.detach().item())
             pred = nn.functional.interpolate(pred, depth.shape[-2:], mode='bilinear', align_corners=True)
 

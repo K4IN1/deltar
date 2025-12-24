@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import timm
+from .spherical_conv import SphericalConv2d
 
 class PointNetEncoder(nn.Module):
     def __init__(self, in_channel, out_channel):
@@ -56,7 +57,8 @@ class ImageEncoder(nn.Module):
         super(ImageEncoder, self).__init__()
         net = timm.create_model('tf_efficientnetv2_b3', pretrained=True)
         self.conv0 = nn.Sequential(
-            net._modules['conv_stem'],
+            # net._modules['conv_stem'],
+            SphericalConv2d(3, 40, kernel_size=3, stride=2, padding=1),
             net._modules['bn1'],
             net._modules['blocks'][0],
         )
